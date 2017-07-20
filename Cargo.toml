@@ -1,0 +1,9 @@
+[package]
+name = "colors"
+version = "0.1.0"
+authors = ["Isaac Grosof <isaacg@mit.edu>"]
+
+[dependencies]
+image = "*"
+itertools = "^0.6.0"
+rand = "*"
