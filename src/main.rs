@@ -48,9 +48,10 @@ fn main() {
     color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
     let mut unassigned_locations: HashSet<Location> = iproduct!(0..side_length, 0..side_length)
         .collect();
-    let mut frontier: HashSet<Location> = HashSet::new();
+    let mut frontiers: Vec<HashSet<Location>> = (0..random_locs).map(|_| HashSet::new()).collect();
+    let mut assigned_region: HashMap<Location, usize> = HashMap::new();
     assert_eq!(colors.len(), unassigned_locations.len());
-    let mut assigned_colors: HashMap<Color, Location> = HashMap::new();
+    let mut assigned_colors: HashMap<Color, (Location, usize)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
@@ -59,18 +60,18 @@ fn main() {
                 let time_per_pixel = (time.elapsed() / debug_frequency as u32)
                     .subsec_nanos() as f64 / 10f64.powi(9);
                 println!(
-                    "Completed {} out of {} pixels,  {} sec per pixel\n\
-                    Approximately {} sec to go.",
+                    "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
+                     Approximately {} sec to go.",
                     i,
                     size.pow(6),
-                    time_per_pixel,
+                    time_per_pixel * 1000f64,
                     (size.pow(6) as f64 - i as f64) * time_per_pixel
                 );
                 time = Instant::now();
             }
         }
-        let location = if i >= random_locs as usize {
-            let closest_assigned_color = color_offsets
+        let (location, frontier_index) = if i >= random_locs as usize {
+            let &(target_cell, frontier_index) = color_offsets
                 .iter()
                 .filter_map(|offset| {
                     let new0 = color.0 as i64 + offset.0;
@@ -80,50 +81,59 @@ fn main() {
                         new2 < 256
                     {
                         let color = (new0 as u8, new1 as u8, new2 as u8);
-                        if assigned_colors.contains_key(&color) {
-                            Some(color)
-                        } else {
-                            None
-                        }
+                        assigned_colors.get(&color)
                     } else {
                         None
                     }
                 })
                 .next()
                 .expect("It's not empty any more");
-            let target_cell = assigned_colors
-                .get(&closest_assigned_color)
-                .expect("Just looked it up");
-            *frontier
-                .iter()
-                .min_by(|loc1, loc2| {
-                    location_distance(&target_cell, loc1)
-                        .partial_cmp(&location_distance(&target_cell, loc2))
-                        .expect("Not NaN")
-                })
-                .expect("There's at least one left")
+            (
+                *frontiers[frontier_index]
+                    .iter()
+                    .min_by(|loc1, loc2| {
+                        location_distance(&target_cell, loc1)
+                            .partial_cmp(&location_distance(&target_cell, loc2))
+                            .expect("Not NaN")
+                    })
+                    .expect("There's at least one left"),
+                frontier_index,
+            )
         } else {
-            *thread_rng()
+            let location = *thread_rng()
                 .choose(&unassigned_locations
                     .iter()
                     .cloned()
                     .collect::<Vec<Location>>())
-                .expect("There's plenty_left")
+                .expect("There's plenty_left");
+            (location, i)
         };
         unassigned_locations.remove(&location);
-        frontier.remove(&location);
-        for neighbor in [
+        assigned_region.insert(location, frontier_index);
+        frontiers[frontier_index].remove(&location);
+        for neighbor in &[
             (location.0 + 1, location.1),
             (location.0, location.1 + 1),
             (location.0.saturating_sub(1), location.1),
             (location.0, location.1.saturating_sub(1)),
-        ].iter()
-        {
-            if unassigned_locations.contains(neighbor) {
-                frontier.insert(*neighbor);
+        ] {
+            if let Some(&neighbor_region) = assigned_region.get(neighbor) {
+                if neighbor_region != frontier_index {
+                    // Collapse the two regions.
+                    let neighbor_frontier: Vec<Location> =
+                        frontiers[neighbor_region].drain().collect();
+                    frontiers[frontier_index].extend(neighbor_frontier);
+                    for region in assigned_region.values_mut() {
+                        if *region == neighbor_region {
+                            *region = frontier_index;
+                        }
+                    }
+                }
+            } else {
+                frontiers[frontier_index].insert(*neighbor);
             }
         }
-        assigned_colors.insert(color, location);
+        assigned_colors.insert(color, (location, frontier_index));
         let pixel = image::Rgb([
             color.0 * color_multiplier,
             color.1 * color_multiplier,
