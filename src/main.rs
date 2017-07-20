@@ -86,6 +86,7 @@ fn main() {
     color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
     let mut unassigned_locations: HashSet<Location> = iproduct!(0..side_length, 0..side_length)
         .collect();
+    let mut frontier: HashSet<Location> = HashSet::new();
     let mut location_offsets: Vec<(i64, i64)> = iproduct!(
         -(side_length as i64)..side_length as i64,
         -(side_length as i64)..side_length as i64
@@ -138,17 +139,17 @@ fn main() {
             let target_cell = assigned_colors
                 .get(&closest_assigned_color)
                 .expect("Just looked it up");
-            if use_unassigned_instead_of_offset_in_a_row < 3 {
+            if false {//use_unassigned_instead_of_offset_in_a_row < 3 {
                 let start_time = if i % 1000 == 0 {
                     Some(Instant::now())
                 } else {
                     None
                 };
-                let res = offset_closest(&location_offsets, &unassigned_locations, target_cell);
+                let res = offset_closest(&location_offsets, &frontier, target_cell);
                 if let Some(start_time) = start_time {
                     let elapsed = start_time.elapsed();
                     let other_start = Instant::now();
-                    unassigned_closest(&unassigned_locations, target_cell);
+                    unassigned_closest(&frontier, target_cell);
                     let other_elapsed = other_start.elapsed();
                     use_unassigned_instead_of_offset_in_a_row = if other_elapsed < elapsed {
                         use_unassigned_instead_of_offset_in_a_row + 1
@@ -158,7 +159,7 @@ fn main() {
                 }
                 res
             } else {
-                unassigned_closest(&unassigned_locations, target_cell)
+                unassigned_closest(&frontier, target_cell)
             }
         } else {
             *thread_rng()
@@ -169,6 +170,17 @@ fn main() {
                 .expect("There's plenty_left")
         };
         unassigned_locations.remove(&location);
+        frontier.remove(&location);
+        for neighbor in [
+            (location.0 + 1, location.1),
+            (location.0, location.1 + 1),
+            (location.0.saturating_sub(1), location.1),
+            (location.0, location.1.saturating_sub(1)),
+        ].iter() {
+            if unassigned_locations.contains(neighbor) {
+                frontier.insert(*neighbor);
+            }
+        }
         assigned_colors.insert(color, location);
         let pixel = image::Rgb([
             color.0 * color_multiplier,
