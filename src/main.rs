@@ -25,50 +25,12 @@ fn location_distance(loc: &Location, oth_loc: &Location) -> f64 {
     (loc.0 as f64 - oth_loc.0 as f64).hypot(loc.1 as f64 - oth_loc.1 as f64)
 }
 
-fn offset_closest(
-    location_offsets: &Vec<(i64, i64)>,
-    unassigned_locations: &HashSet<Location>,
-    target_cell: &Location,
-) -> Location {
-    location_offsets
-        .iter()
-        .filter_map(|offset| {
-            let new0 = target_cell.0 as i64 + offset.0;
-            let new1 = target_cell.1 as i64 + offset.1;
-            if 0 <= new0 && new0 <= u32::MAX as i64 && 0 <= new1 && new1 <= u32::MAX as i64 {
-                let location = (new0 as u32, new1 as u32);
-                if unassigned_locations.contains(&location) {
-                    Some(location)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .next()
-        .expect("There's at least one left")
-}
-
-fn unassigned_closest(
-    unassigned_locations: &HashSet<Location>,
-    target_cell: &Location,
-) -> Location {
-    *unassigned_locations
-        .iter()
-        .min_by(|loc1, loc2| {
-            location_distance(&target_cell, loc1)
-                .partial_cmp(&location_distance(&target_cell, loc2))
-                .expect("Not NaN")
-        })
-        .expect("There's at least one left")
-}
 fn main() {
     let size: u32 = match args().nth(1) {
         Some(num) => num.parse().unwrap(),
         None => panic!("Provide size as first arg"),
     };
-    let debug_on = args().nth(2).is_some();
+    let debug_frequency: Option<usize> = args().nth(2).map(|freq| freq.parse().unwrap());
     assert!(size * size < 256);
     // Todo: support size = 16
     let color_range = (size * size) as u8;
@@ -87,32 +49,25 @@ fn main() {
     let mut unassigned_locations: HashSet<Location> = iproduct!(0..side_length, 0..side_length)
         .collect();
     let mut frontier: HashSet<Location> = HashSet::new();
-    let mut location_offsets: Vec<(i64, i64)> = iproduct!(
-        -(side_length as i64)..side_length as i64,
-        -(side_length as i64)..side_length as i64
-    ).collect();
-    location_offsets.sort_by(|offset1, offset2| {
-        (offset1.0 as f64)
-            .hypot(offset1.1 as f64)
-            .partial_cmp(&(offset2.0 as f64).hypot(offset2.1 as f64))
-            .expect("Not NaN")
-    });
     assert_eq!(colors.len(), unassigned_locations.len());
     let mut assigned_colors: HashMap<Color, Location> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
-    let mut use_unassigned_instead_of_offset_in_a_row = 0;
     for (i, color) in colors.into_iter().enumerate() {
-        if debug_on && i % 1000 == 0 {
-            println!(
-                "{} {} {} {:?} {}",
-                i,
-                unassigned_locations.len(),
-                size.pow(6),
-                time.elapsed(),
-                use_unassigned_instead_of_offset_in_a_row
-            );
-            time = Instant::now();
+        if let Some(debug_frequency) = debug_frequency {
+            if i % debug_frequency == 0 {
+                let time_per_pixel = (time.elapsed() / debug_frequency as u32)
+                    .subsec_nanos() as f64 / 10f64.powi(9);
+                println!(
+                    "Completed {} out of {} pixels,  {} sec per pixel\n\
+                    Approximately {} sec to go.",
+                    i,
+                    size.pow(6),
+                    time_per_pixel,
+                    (size.pow(6) as f64 - i as f64) * time_per_pixel
+                );
+                time = Instant::now();
+            }
         }
         let location = if i >= random_locs as usize {
             let closest_assigned_color = color_offsets
@@ -139,28 +94,14 @@ fn main() {
             let target_cell = assigned_colors
                 .get(&closest_assigned_color)
                 .expect("Just looked it up");
-            if false {//use_unassigned_instead_of_offset_in_a_row < 3 {
-                let start_time = if i % 1000 == 0 {
-                    Some(Instant::now())
-                } else {
-                    None
-                };
-                let res = offset_closest(&location_offsets, &frontier, target_cell);
-                if let Some(start_time) = start_time {
-                    let elapsed = start_time.elapsed();
-                    let other_start = Instant::now();
-                    unassigned_closest(&frontier, target_cell);
-                    let other_elapsed = other_start.elapsed();
-                    use_unassigned_instead_of_offset_in_a_row = if other_elapsed < elapsed {
-                        use_unassigned_instead_of_offset_in_a_row + 1
-                    } else {
-                        0
-                    }
-                }
-                res
-            } else {
-                unassigned_closest(&frontier, target_cell)
-            }
+            *frontier
+                .iter()
+                .min_by(|loc1, loc2| {
+                    location_distance(&target_cell, loc1)
+                        .partial_cmp(&location_distance(&target_cell, loc2))
+                        .expect("Not NaN")
+                })
+                .expect("There's at least one left")
         } else {
             *thread_rng()
                 .choose(&unassigned_locations
@@ -176,7 +117,8 @@ fn main() {
             (location.0, location.1 + 1),
             (location.0.saturating_sub(1), location.1),
             (location.0, location.1.saturating_sub(1)),
-        ].iter() {
+        ].iter()
+        {
             if unassigned_locations.contains(neighbor) {
                 frontier.insert(*neighbor);
             }

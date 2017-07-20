@@ -1,7 +1,7 @@
 [package]
 name = "colors"
-version = "0.1.0"
-authors = ["Isaac Grosof <isaacg@mit.edu>"]
+version = "0.2.0"
+authors = ["Isaac Grosof <isaacbg227@gmail.com>"]
 
 [dependencies]
 image = "*"
