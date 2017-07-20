@@ -1,10 +1,10 @@
 # colors
 Lovely programatic images
 
-This picture was generated in 3 minutes, 21x faster than version 0.1.0:
-![Programatic image](pic10-2984149942.png)
+This picture was generated in 8.5 minutes:
+![Programatic image](pic11-713679184.png)
 
-This was generated with `cargo run --release 10`
+This was generated with `cargo run --release 11`
 
 ## How it works
 
@@ -20,9 +20,9 @@ First, all possible colors are generated, and are randomly shuffled.
 
 After the random color is picked, we search through the possible color offsets in ascending order of distance (L2 norm) to find the closest color which has already been assigned. This is pretty fast, since colors are assigned randomly.
 
-Then, to find the location, we search through the frontier of locations which have not been assigned, but which neighbor an assigned location. This is much faster than the previous offset based approach. It's about O(n^3), where n is the input and n^6 is the number of pixels.
+Then, to find the location, we search through the frontier of locations which have not been assigned, but which neighbor an assigned location. This is much faster than the previous offset based approach. It's about O(n^0.5), n is the total number of pixels in the image.
 
-Overall, the algorithm is about O(n^9), and as mentioned above it takes about 3 minutes for n=10.
+Overall, the algorithm is about O(n^1.5), and it takes about 3 minutes for n=10.
 
 # Command line options
 
