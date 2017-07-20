@@ -98,9 +98,10 @@ fn main() {
     assert_eq!(colors.len(), unassigned_locations.len());
     let mut assigned_colors: HashMap<Color, Location> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
-    let mut time = Instant::now();
+    //let mut time = Instant::now();
     let mut use_unassigned_instead_of_offset_in_a_row = 0;
     for (i, color) in colors.into_iter().enumerate() {
+        /*
         if i % 1000 == 0 {
             println!(
                 "{} {} {} {:?} {}",
@@ -112,6 +113,7 @@ fn main() {
             );
             time = Instant::now();
         }
+        */
         let location = if i >= random_locs as usize {
             let closest_assigned_color = color_offsets
                 .iter()
