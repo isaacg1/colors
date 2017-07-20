@@ -68,6 +68,7 @@ fn main() {
         Some(num) => num.parse().unwrap(),
         None => panic!("Provide size as first arg"),
     };
+    let debug_on = args().nth(2).is_some();
     assert!(size * size < 256);
     // Todo: support size = 16
     let color_range = (size * size) as u8;
@@ -101,7 +102,7 @@ fn main() {
     let mut time = Instant::now();
     let mut use_unassigned_instead_of_offset_in_a_row = 0;
     for (i, color) in colors.into_iter().enumerate() {
-        if i % 1000 == 0 {
+        if debug_on && i % 1000 == 0 {
             println!(
                 "{} {} {} {:?} {}",
                 i,
