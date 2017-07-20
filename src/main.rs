@@ -34,7 +34,7 @@ fn main() {
     assert!(size * size < 256);
     // Todo: support size = 16
     let color_range = (size * size) as u8;
-    let color_multiplier = 255 / color_range;
+    let color_multiplier = 255f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
     let mut colors: Vec<Color> = iproduct!(0..color_range, 0..color_range, 0..color_range)
@@ -56,16 +56,20 @@ fn main() {
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
         if let Some(debug_frequency) = debug_frequency {
-            if i % debug_frequency == 0 {
+            if i > 0 && i % debug_frequency == 0 {
                 let time_per_pixel = (time.elapsed() / debug_frequency as u32)
                     .subsec_nanos() as f64 / 10f64.powi(9);
                 println!(
                     "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
-                     Approximately {} sec to go.",
+                     Approximately {} sec to go.\n\
+                     Region(s) {:?} still remain.",
                     i,
                     size.pow(6),
                     time_per_pixel * 1000f64,
-                    (size.pow(6) as f64 - i as f64) * time_per_pixel
+                    (size.pow(6) as f64 - i as f64) * time_per_pixel,
+                    (0..frontiers.len())
+                        .filter(|&i| !frontiers[i].is_empty())
+                        .collect::<Vec<usize>>()
                 );
                 time = Instant::now();
             }
@@ -120,6 +124,9 @@ fn main() {
             if let Some(&neighbor_region) = assigned_region.get(neighbor) {
                 if neighbor_region != frontier_index {
                     // Collapse the two regions.
+                    if debug_frequency.is_some() {
+                        println!("Collapsing {} into {}", neighbor_region, frontier_index);
+                    }
                     let neighbor_frontier: Vec<Location> =
                         frontiers[neighbor_region].drain().collect();
                     frontiers[frontier_index].extend(neighbor_frontier);
@@ -128,16 +135,21 @@ fn main() {
                             *region = frontier_index;
                         }
                     }
+                    for location_and_region in assigned_colors.values_mut() {
+                        if location_and_region.1 == neighbor_region {
+                            location_and_region.1 = frontier_index;
+                        }
+                    }
                 }
-            } else {
+            } else if unassigned_locations.contains(neighbor) {
                 frontiers[frontier_index].insert(*neighbor);
             }
         }
         assigned_colors.insert(color, (location, frontier_index));
         let pixel = image::Rgb([
-            color.0 * color_multiplier,
-            color.1 * color_multiplier,
-            color.2 * color_multiplier,
+            (color.0 as f64 * color_multiplier) as u8,
+            (color.1 as f64 * color_multiplier) as u8,
+            (color.2 as f64 * color_multiplier) as u8,
         ]);
         img.put_pixel(location.0, location.1, pixel);
     }
