@@ -1,7 +1,7 @@
 # colors
 Lovely programatic images
 
-This one was generated in 17 minutes:
-![Programatic image](pic9-3123249316.png)
+This one was generated in 63 minutes:
+![Programatic image](pic10-2372992320.png)
 
-`cargo run --release 9`
+`cargo run --release 10`
