@@ -22,11 +22,9 @@ type Color = (u8, u8, u8);
 
 type Location = (u32, u32);
 
-// Keep in mind that this is not the actual distance, but the distance squared.
-// The actual distance is not needed for comparisons between distances.
-fn location_distance(loc: &Location, oth_loc: &Location) -> f64 {
-    let dx = loc.0 as f64 - oth_loc.0 as f64;
-    let dy = loc.1 as f64 - oth_loc.1 as f64;
+fn location_squared_distance(loc: &Location, oth_loc: &Location) -> i64 {
+    let dx = loc.0 as i64 - oth_loc.0 as i64;
+    let dy = loc.1 as i64 - oth_loc.1 as i64;
 
     dx*dx + dy*dy
 }
@@ -105,10 +103,8 @@ fn main() {
             (
                 *frontiers[frontier_index]
                     .iter()
-                    .min_by(|loc1, loc2| {
-                        location_distance(&target_cell, loc1)
-                            .partial_cmp(&location_distance(&target_cell, loc2))
-                            .expect("Not NaN")
+                    .min_by_key(|loc| {
+                        location_squared_distance(&target_cell, loc)
                     })
                     .expect("There's at least one left"),
                 frontier_index,
