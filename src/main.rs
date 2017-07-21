@@ -21,8 +21,14 @@ use std::time::Instant;
 type Color = (u8, u8, u8);
 
 type Location = (u32, u32);
+
+// Keep in mind that this is not the actual distance, but the distance squared.
+// The actual distance is not needed for comparisons between distances.
 fn location_distance(loc: &Location, oth_loc: &Location) -> f64 {
-    (loc.0 as f64 - oth_loc.0 as f64).hypot(loc.1 as f64 - oth_loc.1 as f64)
+    let dx = loc.0 as f64 - oth_loc.0 as f64;
+    let dy = loc.1 as f64 - oth_loc.1 as f64;
+
+    dx*dx + dy*dy
 }
 
 fn main() {
