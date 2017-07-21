@@ -1,6 +1,9 @@
 # colors
 Lovely programatic images
 
+This picture was generated with `cargo run --release 13`:
+![Programatic image, size 13](pic13-2984601103.png)
+
 This picture was generated in 5.5 minutes with `cargo run --release 12`:
 ![Programatic image, size 12](pic12-1980163731.png)
 
@@ -28,6 +31,6 @@ Overall, the algorithm is about O(n^1.5)
 Put the size parameter as the first argument. Currently 1-15 are suppoered.
 
 If you want debugging information, give the frequency (printout per how many pixels) that you want.
-1000-10000 seems good on my machine.
+10000 seems good on my machine.
 
 The command line interface will likely be upgraded soon.

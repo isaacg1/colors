@@ -31,14 +31,18 @@ fn main() {
         None => panic!("Provide size as first arg"),
     };
     let debug_frequency: Option<usize> = args().nth(2).map(|freq| freq.parse().unwrap());
-    assert!(size * size < 256);
+    assert!(size * size <= 256);
     // Todo: support size = 16
-    let color_range = (size * size) as u8;
+    let color_range = size * size;
+    let color_range_vec: Vec<u8> = (0..size * size).map(|color| color as u8).collect();
     let color_multiplier = 255f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
-    let mut colors: Vec<Color> = iproduct!(0..color_range, 0..color_range, 0..color_range)
-        .collect();
+    let mut colors: Vec<Color> = iproduct!(
+        color_range_vec.iter().cloned(),
+        color_range_vec.iter().cloned(),
+        color_range_vec.iter().cloned()
+    ).collect();
     thread_rng().shuffle(&mut colors);
     let mut color_offsets: Vec<(i64, i64, i64)> = iproduct!(
         -(color_range as i64)..color_range as i64,
@@ -120,7 +124,8 @@ fn main() {
             (location.0, location.1 + 1),
             (location.0.saturating_sub(1), location.1),
             (location.0, location.1.saturating_sub(1)),
-        ] {
+        ]
+        {
             if let Some(&neighbor_region) = assigned_region.get(neighbor) {
                 if neighbor_region != frontier_index {
                     // Collapse the two regions.
@@ -146,11 +151,13 @@ fn main() {
             }
         }
         assigned_colors.insert(color, (location, frontier_index));
-        let pixel = image::Rgb([
-            (color.0 as f64 * color_multiplier) as u8,
-            (color.1 as f64 * color_multiplier) as u8,
-            (color.2 as f64 * color_multiplier) as u8,
-        ]);
+        let pixel = image::Rgb(
+            [
+                (color.0 as f64 * color_multiplier) as u8,
+                (color.1 as f64 * color_multiplier) as u8,
+                (color.2 as f64 * color_multiplier) as u8,
+            ],
+        );
         img.put_pixel(location.0, location.1, pixel);
     }
     let filename = format!("pic{}-{}.png", size, random::<u32>());
