@@ -32,7 +32,6 @@ fn main() {
     };
     let debug_frequency: Option<usize> = args().nth(2).map(|freq| freq.parse().unwrap());
     assert!(size * size <= 256);
-    // Todo: support size = 16
     let color_range = size * size;
     let color_range_vec: Vec<u8> = (0..size * size).map(|color| color as u8).collect();
     let color_multiplier = 255f64 / color_range as f64;
@@ -66,14 +65,15 @@ fn main() {
                 println!(
                     "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
                      Approximately {} sec to go.\n\
-                     Region(s) {:?} still remain.",
+                     {} frontier(s) with {} pixels exist.",
                     i,
                     size.pow(6),
                     time_per_pixel * 1000f64,
                     (size.pow(6) as f64 - i as f64) * time_per_pixel,
-                    (0..frontiers.len())
-                        .filter(|&i| !frontiers[i].is_empty())
-                        .collect::<Vec<usize>>()
+                    frontiers.iter()
+                        .filter(|&frontier| !frontier.is_empty())
+                        .count(),
+                    frontiers.iter().map(|frontier| frontier.len()).sum::<usize>()
                 );
                 time = Instant::now();
             }
