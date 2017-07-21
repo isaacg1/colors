@@ -22,7 +22,7 @@ type Color = (u8, u8, u8);
 
 type Location = (u32, u32);
 
-fn location_squared_distance(loc: &Location, oth_loc: &Location) -> i64 {
+fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i64 {
     let dx = loc.0 as i64 - oth_loc.0 as i64;
     let dy = loc.1 as i64 - oth_loc.1 as i64;
 
@@ -104,7 +104,7 @@ fn main() {
                 *frontiers[frontier_index]
                     .iter()
                     .min_by_key(|loc| {
-                        location_squared_distance(&target_cell, loc)
+                        squared_location_distance(&target_cell, loc)
                     })
                     .expect("There's at least one left"),
                 frontier_index,
