@@ -1,9 +1,15 @@
+#![feature(test)]
+extern crate test;
+
 extern crate image;
 #[macro_use]
 extern crate itertools;
 extern crate rand;
+extern crate clap;
 
-use image::ImageBuffer;
+use clap::{Arg, App};
+
+use image::{ImageBuffer, DynamicImage};
 
 use std::fs::File;
 use std::path::Path;
@@ -12,30 +18,81 @@ use rand::{thread_rng, Rng, random};
 
 use std::collections::{HashSet, HashMap};
 
-use std::env::args;
-
 use std::u32;
 
 use std::time::Instant;
+
+use std::mem::swap;
 
 type Color = (u8, u8, u8);
 
 type Location = (u32, u32);
 
+type FrontierIndex = usize;
+
 fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i64 {
     let dx = loc.0 as i64 - oth_loc.0 as i64;
     let dy = loc.1 as i64 - oth_loc.1 as i64;
 
-    dx*dx + dy*dy
+    dx * dx + dy * dy
 }
 
-fn main() {
-    let size: u32 = match args().nth(1) {
-        Some(num) => num.parse().unwrap(),
-        None => panic!("Provide size as first arg"),
-    };
-    let debug_frequency: Option<usize> = args().nth(2).map(|freq| freq.parse().unwrap());
-    assert!(size * size <= 256);
+fn maybe_print_debug_info(
+    debug_frequency: Option<usize>,
+    pixel_index: usize,
+    size: u32,
+    time: &mut Instant,
+    frontiers: &Vec<HashSet<Location>>,
+) {
+    if let Some(debug_frequency) = debug_frequency {
+        if pixel_index > 0 && pixel_index % debug_frequency == 0 {
+            let time_per_pixel = (time.elapsed() / debug_frequency as u32).subsec_nanos() as f64 /
+                10f64.powi(9);
+            println!(
+                "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
+                     Approximately {} sec to go.\n\
+                     {} frontier(s) with {} pixels exist.",
+                pixel_index,
+                size.pow(6),
+                time_per_pixel * 1000f64,
+                (size.pow(6) as f64 - pixel_index as f64) * time_per_pixel,
+                frontiers
+                    .iter()
+                    .filter(|&frontier| !frontier.is_empty())
+                    .count(),
+                frontiers
+                    .iter()
+                    .map(|frontier| frontier.len())
+                    .sum::<usize>()
+            );
+            *time = Instant::now();
+        }
+    }
+}
+
+fn find_target_cell_and_frontier<'a>(
+    color: Color,
+    color_offsets: &Vec<(i64, i64, i64)>,
+    assigned_colors: &'a HashMap<Color, (Location, FrontierIndex)>,
+) -> &'a (Location, FrontierIndex) {
+    color_offsets
+        .iter()
+        .filter_map(|offset| {
+            let new0 = color.0 as i64 + offset.0;
+            let new1 = color.1 as i64 + offset.1;
+            let new2 = color.2 as i64 + offset.2;
+            if 0 <= new0 && new0 < 256 && 0 <= new1 && new1 < 256 && 0 <= new2 && new2 < 256 {
+                let color = (new0 as u8, new1 as u8, new2 as u8);
+                assigned_colors.get(&color)
+            } else {
+                None
+            }
+        })
+        .next()
+        .expect("It's not empty any more")
+}
+fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
+    assert!(size <= 16);
     let color_range = size * size;
     let color_range_vec: Vec<u8> = (0..size * size).map(|color| color as u8).collect();
     let color_multiplier = 255f64 / color_range as f64;
@@ -62,50 +119,14 @@ fn main() {
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
-        if let Some(debug_frequency) = debug_frequency {
-            if i > 0 && i % debug_frequency == 0 {
-                let time_per_pixel = (time.elapsed() / debug_frequency as u32)
-                    .subsec_nanos() as f64 / 10f64.powi(9);
-                println!(
-                    "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
-                     Approximately {} sec to go.\n\
-                     {} frontier(s) with {} pixels exist.",
-                    i,
-                    size.pow(6),
-                    time_per_pixel * 1000f64,
-                    (size.pow(6) as f64 - i as f64) * time_per_pixel,
-                    frontiers.iter()
-                        .filter(|&frontier| !frontier.is_empty())
-                        .count(),
-                    frontiers.iter().map(|frontier| frontier.len()).sum::<usize>()
-                );
-                time = Instant::now();
-            }
-        }
+        maybe_print_debug_info(debug_frequency, i, size, &mut time, &frontiers);
         let (location, frontier_index) = if i >= random_locs as usize {
-            let &(target_cell, frontier_index) = color_offsets
-                .iter()
-                .filter_map(|offset| {
-                    let new0 = color.0 as i64 + offset.0;
-                    let new1 = color.1 as i64 + offset.1;
-                    let new2 = color.2 as i64 + offset.2;
-                    if 0 <= new0 && new0 < 256 && 0 <= new1 && new1 < 256 && 0 <= new2 &&
-                        new2 < 256
-                    {
-                        let color = (new0 as u8, new1 as u8, new2 as u8);
-                        assigned_colors.get(&color)
-                    } else {
-                        None
-                    }
-                })
-                .next()
-                .expect("It's not empty any more");
+            let &(target_cell, frontier_index) =
+                find_target_cell_and_frontier(color, &color_offsets, &assigned_colors);
             (
                 *frontiers[frontier_index]
                     .iter()
-                    .min_by_key(|loc| {
-                        squared_location_distance(&target_cell, loc)
-                    })
+                    .min_by_key(|loc| squared_location_distance(&target_cell, loc))
                     .expect("There's at least one left"),
                 frontier_index,
             )
@@ -134,9 +155,9 @@ fn main() {
                     if debug_frequency.is_some() {
                         println!("Collapsing {} into {}", neighbor_region, frontier_index);
                     }
-                    let neighbor_frontier: Vec<Location> =
-                        frontiers[neighbor_region].drain().collect();
-                    frontiers[frontier_index].extend(neighbor_frontier);
+                    let mut temp_frontier = HashSet::new();
+                    swap(&mut temp_frontier, &mut frontiers[neighbor_region]);
+                    frontiers[frontier_index].extend(temp_frontier.drain());
                     for region in assigned_region.values_mut() {
                         if *region == neighbor_region {
                             *region = frontier_index;
@@ -162,8 +183,64 @@ fn main() {
         );
         img.put_pixel(location.0, location.1, pixel);
     }
+    image::ImageRgb8(img)
+}
+
+fn main() {
+    let matches = App::new("Colors")
+        .version("0.4")
+        .author("Isaac Grosof <isaacbg227@gmail.com>")
+        .about("Makes beautiful (giant) images")
+        .arg(
+            Arg::with_name("size")
+                .help(
+                    "Cube root of the side length of the image. 0-16 are supported",
+                )
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("verbosity")
+                .short("v")
+                .long("verbosity")
+                .takes_value(true)
+                .help(
+                    "Sets the verbose output frequency. 20000 is a typical value.",
+                ),
+        ).get_matches();
+    let size: u32 = matches.value_of("size").expect("Size must be provided").parse().expect("Size must be an integer in range");
+    let debug_frequency: Option<usize> = matches.value_of("verbosity").map(|verbosity| verbosity.parse().expect("Verbosity must be an integer in range"));
+    assert!(size <= 16, "Size must be no more than 16");
     let filename = format!("pic{}-{}.png", size, random::<u32>());
+    let image = make_image(size, debug_frequency);
     let fout = &mut File::create(&Path::new(&filename)).unwrap();
-    image::ImageRgb8(img).save(fout, image::PNG).unwrap();
+    image.save(fout, image::PNG).unwrap();
     println!("Saved to {}", &filename);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test::Bencher;
+
+    #[bench]
+    fn size_1(b: &mut Bencher) {
+        b.iter(|| make_image(1, None))
+    }
+
+    #[bench]
+    fn size_2(b: &mut Bencher) {
+        b.iter(|| make_image(2, None))
+    }
+
+
+    #[bench]
+    fn size_3(b: &mut Bencher) {
+        b.iter(|| make_image(3, None))
+    }
+
+    #[bench]
+    fn size_4(b: &mut Bencher) {
+        b.iter(|| make_image(4, None))
+    }
 }
