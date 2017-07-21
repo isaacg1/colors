@@ -1,11 +1,11 @@
 # colors
 Lovely programatic images
 
+This picture was generated in 12 minute and 30 seconds with `cargo run --release 16`:
+![Programatic image, size 16](pic16-1661210021.png)
+
 This picture was generated in 8 minutes and 51 seconds with `cargo run --release 15`:
 ![Programatic image, size 15](pic15-1623744363.png)
-
-This picture was generated in 1 minute and 11 seconds with `cargo run --release 12`:
-![Programatic image, size 12](pic12-1980163731.png)
 
 ## How it works
 
