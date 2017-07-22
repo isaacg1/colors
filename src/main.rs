@@ -91,6 +91,34 @@ fn find_target_cell_and_frontier<'a>(
         .next()
         .expect("It's not empty any more")
 }
+
+fn collapse_into(
+    source_region: usize,
+    target_region: usize,
+    debug: bool,
+    frontiers: &mut Vec<HashSet<Location>>,
+    locations_to_regions: &mut HashMap<Location, Option<usize>>,
+    assigned_colors: &mut HashMap<Color, (Location, usize)>,
+) {
+    if debug {
+        println!("Collapsing {} into {}", source_region, target_region);
+    }
+    let mut temp_frontier = HashSet::new();
+    swap(&mut temp_frontier, &mut frontiers[source_region]);
+    frontiers[target_region].extend(temp_frontier.drain().filter(|location| {
+        locations_to_regions.get(location) == Some(&None)
+    }));
+    for region in locations_to_regions.values_mut() {
+        if *region == Some(source_region) {
+            *region = Some(target_region);
+        }
+    }
+    for location_and_region in assigned_colors.values_mut() {
+        if location_and_region.1 == source_region {
+            location_and_region.1 = target_region;
+        }
+    }
+}
 fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
     assert!(size <= 16);
     let color_range = size * size;
@@ -98,23 +126,30 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
     let color_multiplier = 255f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
-    let mut colors: Vec<Color> = iproduct!(
-        color_range_vec.iter().cloned(),
-        color_range_vec.iter().cloned(),
-        color_range_vec.iter().cloned()
-    ).collect();
-    thread_rng().shuffle(&mut colors);
-    let mut color_offsets: Vec<(i64, i64, i64)> = iproduct!(
-        -(color_range as i64)..color_range as i64,
-        -(color_range as i64)..color_range as i64,
-        -(color_range as i64)..color_range as i64
-    ).collect();
-    color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
-    let mut unassigned_locations: HashSet<Location> = iproduct!(0..side_length, 0..side_length)
-        .collect();
+    let colors = {
+        let mut colors: Vec<Color> = iproduct!(
+            color_range_vec.iter().cloned(),
+            color_range_vec.iter().cloned(),
+            color_range_vec.iter().cloned()
+        ).collect();
+        thread_rng().shuffle(&mut colors);
+        colors
+    };
+    let color_offsets = {
+        let mut color_offsets: Vec<(i64, i64, i64)> = iproduct!(
+            -(color_range as i64)..color_range as i64,
+            -(color_range as i64)..color_range as i64,
+            -(color_range as i64)..color_range as i64
+        ).collect();
+        color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
+        color_offsets
+    };
+    let mut locations_to_regions: HashMap<Location, Option<usize>> =
+        iproduct!(0..side_length, 0..side_length)
+            .map(|location| (location, None))
+            .collect();
+    assert_eq!(colors.len(), locations_to_regions.len());
     let mut frontiers: Vec<HashSet<Location>> = (0..random_locs).map(|_| HashSet::new()).collect();
-    let mut assigned_region: HashMap<Location, usize> = HashMap::new();
-    assert_eq!(colors.len(), unassigned_locations.len());
     let mut assigned_colors: HashMap<Color, (Location, usize)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
@@ -131,16 +166,18 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
                 frontier_index,
             )
         } else {
-            let location = *thread_rng()
-                .choose(&unassigned_locations
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<Location>>())
-                .expect("There's plenty_left");
+            let location = loop {
+                let &(&location, region) = thread_rng()
+                    .choose(&locations_to_regions.iter().collect::<Vec<_>>())
+                    .expect("There's plenty_left");
+                if region.is_none() {
+                    break location;
+                }
+            };
             (location, i)
         };
-        unassigned_locations.remove(&location);
-        assigned_region.insert(location, frontier_index);
+        let previous_region = locations_to_regions.insert(location, Some(frontier_index));
+        assert_eq!(previous_region, Some(None));
         frontiers[frontier_index].remove(&location);
         for neighbor in &[
             (location.0 + 1, location.1),
@@ -149,28 +186,21 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             (location.0, location.1.saturating_sub(1)),
         ]
         {
-            if let Some(&neighbor_region) = assigned_region.get(neighbor) {
-                if neighbor_region != frontier_index {
-                    // Collapse the two regions.
-                    if debug_frequency.is_some() {
-                        println!("Collapsing {} into {}", neighbor_region, frontier_index);
+            if let Some(&region) = locations_to_regions.get(neighbor) {
+                if let Some(neighbor_region) = region {
+                    if neighbor_region != frontier_index {
+                        collapse_into(
+                            neighbor_region,
+                            frontier_index,
+                            debug_frequency.is_some(),
+                            &mut frontiers,
+                            &mut locations_to_regions,
+                            &mut assigned_colors,
+                        );
                     }
-                    let mut temp_frontier = HashSet::new();
-                    swap(&mut temp_frontier, &mut frontiers[neighbor_region]);
-                    frontiers[frontier_index].extend(temp_frontier.drain());
-                    for region in assigned_region.values_mut() {
-                        if *region == neighbor_region {
-                            *region = frontier_index;
-                        }
-                    }
-                    for location_and_region in assigned_colors.values_mut() {
-                        if location_and_region.1 == neighbor_region {
-                            location_and_region.1 = frontier_index;
-                        }
-                    }
+                } else {
+                    frontiers[frontier_index].insert(*neighbor);
                 }
-            } else if unassigned_locations.contains(neighbor) {
-                frontiers[frontier_index].insert(*neighbor);
             }
         }
         assigned_colors.insert(color, (location, frontier_index));
@@ -207,9 +237,18 @@ fn main() {
                 .help(
                     "Sets the verbose output frequency. 20000 is a typical value.",
                 ),
-        ).get_matches();
-    let size: u32 = matches.value_of("size").expect("Size must be provided").parse().expect("Size must be an integer in range");
-    let debug_frequency: Option<usize> = matches.value_of("verbosity").map(|verbosity| verbosity.parse().expect("Verbosity must be an integer in range"));
+        )
+        .get_matches();
+    let size: u32 = matches
+        .value_of("size")
+        .expect("Size must be provided")
+        .parse()
+        .expect("Size must be an integer in range");
+    let debug_frequency: Option<usize> = matches.value_of("verbosity").map(|verbosity| {
+        verbosity.parse().expect(
+            "Verbosity must be an integer in range",
+        )
+    });
     assert!(size <= 16, "Size must be no more than 16");
     let filename = format!("pic{}-{}.png", size, random::<u32>());
     let image = make_image(size, debug_frequency);
