@@ -1,20 +1,25 @@
 #![feature(test)]
+#![warn(clippy_pedantic)]
+#![allow(print_stdout)]
+#![warn(warnings)]
+#![allow(unknown_lints, missing_docs_in_private_items, cast_sign_loss,
+         cast_possible_truncation, cast_precision_loss)]
 extern crate test;
 
 extern crate image;
+use image::{ImageBuffer, DynamicImage};
+
 #[macro_use]
 extern crate itertools;
+
 extern crate rand;
+use rand::{thread_rng, Rng, random};
+
 extern crate clap;
-
 use clap::{Arg, App};
-
-use image::{ImageBuffer, DynamicImage};
 
 use std::fs::File;
 use std::path::Path;
-
-use rand::{thread_rng, Rng, random};
 
 use std::collections::{HashSet, HashMap};
 
@@ -28,7 +33,7 @@ type Color = (u8, u8, u8);
 
 type Location = (u32, u32);
 
-type FrontierIndex = usize;
+type RegionId = usize;
 
 fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i64 {
     let dx = loc.0 as i64 - oth_loc.0 as i64;
@@ -42,19 +47,19 @@ fn maybe_print_debug_info(
     pixel_index: usize,
     size: u32,
     time: &mut Instant,
-    frontiers: &Vec<HashSet<Location>>,
+    frontiers: &[HashSet<Location>],
 ) {
     if let Some(debug_frequency) = debug_frequency {
         if pixel_index > 0 && pixel_index % debug_frequency == 0 {
             let time_per_pixel = (time.elapsed() / debug_frequency as u32).subsec_nanos() as f64 /
-                10f64.powi(9);
+                10_f64.powi(9);
             println!(
                 "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
                      Approximately {} sec to go.\n\
                      {} frontier(s) with {} pixels exist.",
                 pixel_index,
                 size.pow(6),
-                time_per_pixel * 1000f64,
+                time_per_pixel * 1000_f64,
                 (size.pow(6) as f64 - pixel_index as f64) * time_per_pixel,
                 frontiers
                     .iter()
@@ -72,9 +77,9 @@ fn maybe_print_debug_info(
 
 fn find_target_cell_and_frontier<'a>(
     color: Color,
-    color_offsets: &Vec<(i64, i64, i64)>,
-    assigned_colors: &'a HashMap<Color, (Location, FrontierIndex)>,
-) -> &'a (Location, FrontierIndex) {
+    color_offsets: &[(i64, i64, i64)],
+    assigned_colors: &'a HashMap<Color, (Location, RegionId)>,
+) -> &'a (Location, RegionId) {
     color_offsets
         .iter()
         .filter_map(|offset| {
@@ -93,12 +98,12 @@ fn find_target_cell_and_frontier<'a>(
 }
 
 fn collapse_into(
-    source_region: usize,
-    target_region: usize,
+    source_region: RegionId,
+    target_region: RegionId,
     debug: bool,
-    frontiers: &mut Vec<HashSet<Location>>,
-    locations_to_regions: &mut HashMap<Location, Option<usize>>,
-    assigned_colors: &mut HashMap<Color, (Location, usize)>,
+    frontiers: &mut [HashSet<Location>],
+    locations_to_regions: &mut HashMap<Location, Option<RegionId>>,
+    assigned_colors: &mut HashMap<Color, (Location, RegionId)>,
 ) {
     if debug {
         println!("Collapsing {} into {}", source_region, target_region);
@@ -123,7 +128,7 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
     assert!(size <= 16);
     let color_range = size * size;
     let color_range_vec: Vec<u8> = (0..size * size).map(|color| color as u8).collect();
-    let color_multiplier = 255f64 / color_range as f64;
+    let color_multiplier = 256_f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
     let colors = {
@@ -144,13 +149,13 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
         color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
         color_offsets
     };
-    let mut locations_to_regions: HashMap<Location, Option<usize>> =
+    let mut locations_to_regions: HashMap<Location, Option<RegionId>> =
         iproduct!(0..side_length, 0..side_length)
             .map(|location| (location, None))
             .collect();
     assert_eq!(colors.len(), locations_to_regions.len());
     let mut frontiers: Vec<HashSet<Location>> = (0..random_locs).map(|_| HashSet::new()).collect();
-    let mut assigned_colors: HashMap<Color, (Location, usize)> = HashMap::new();
+    let mut assigned_colors: HashMap<Color, (Location, RegionId)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
@@ -252,8 +257,11 @@ fn main() {
     assert!(size <= 16, "Size must be no more than 16");
     let filename = format!("pic{}-{}.png", size, random::<u32>());
     let image = make_image(size, debug_frequency);
-    let fout = &mut File::create(&Path::new(&filename)).unwrap();
-    image.save(fout, image::PNG).unwrap();
+    let fout =
+        &mut File::create(&Path::new(&filename)).expect("Create the file to save in should work");
+    image.save(fout, image::PNG).expect(
+        "Saving should just work.",
+    );
     println!("Saved to {}", &filename);
 }
 
