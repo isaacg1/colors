@@ -283,7 +283,7 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
 
 fn main() {
     let matches = App::new("Colors")
-        .version("0.4")
+        .version("0.5")
         .author("Isaac Grosof <isaacbg227@gmail.com>")
         .about("Makes beautiful (giant) images")
         .arg(
