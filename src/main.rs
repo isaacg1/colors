@@ -54,41 +54,38 @@ where
             set: HashSet::new(),
         }
     }
-
     fn insert(&mut self, value: T) {
         let was_not_present = self.set.insert(value.clone());
         if was_not_present {
             self.vec.push(value)
         }
     }
-
     fn remove(&mut self, index: usize) {
         let value = self.vec.swap_remove(index);
         let was_present = self.set.remove(&value);
         assert!(was_present);
     }
-
-    fn consume<U>(&mut self, mut other: Self, ignore: &HashMap<T, Option<U>>)
+    // Takes ownership of other and drops it on purpose.
+    fn consume<U>(&mut self, other: Self, ignore: &HashMap<T, Option<U>>)
     where
         U: Eq,
     {
         let to_add: Vec<T> = other
-            .set
-            .drain()
-            .filter(|location| ignore.get(location) == Some(&None) && !self.set.contains(location))
+            .vec
+            .into_iter()
+            .filter(|location| {
+                ignore.get(location) == Some(&None) && !self.set.contains(location)
+            })
             .collect();
         self.vec.extend(to_add.iter().cloned());
         self.set.extend(to_add.into_iter());
     }
-
     fn iter(&self) -> std::slice::Iter<T> {
         self.vec.iter()
     }
-
     fn is_empty(&self) -> bool {
         self.vec.is_empty()
     }
-
     fn len(&self) -> usize {
         self.vec.len()
     }
@@ -115,8 +112,8 @@ fn maybe_print_debug_info(
             let time_per_pixel = (time.elapsed() / debug_frequency as u32).subsec_nanos() as f64 /
                 10_f64.powi(9);
             println!(
-                "Completed {} out of {} pixels,  {} milliseconds per pixel\n\
-                     Approximately {} sec to go.\n\
+                "Completed {} out of {} pixels,  {:.6} milliseconds per pixel\n\
+                     Approximately {:.1} sec to go.\n\
                      {} frontier(s) with {} pixels exist.",
                 pixel_index,
                 size.pow(6),
