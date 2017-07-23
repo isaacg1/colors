@@ -22,6 +22,7 @@ use std::fs::File;
 use std::path::Path;
 
 use std::collections::{HashSet, HashMap};
+use std::hash::Hash;
 
 use std::u32;
 
@@ -35,6 +36,66 @@ type Location = (u32, u32);
 
 type RegionId = usize;
 
+type Frontier = VecSet<Location>;
+
+// Synchronized to always have the same data.
+struct VecSet<T> {
+    vec: Vec<T>,
+    set: HashSet<T>,
+}
+
+impl<T> VecSet<T>
+where
+    T: Clone + Eq + Hash,
+{
+    fn new() -> Self {
+        Self {
+            vec: Vec::new(),
+            set: HashSet::new(),
+        }
+    }
+
+    fn insert(&mut self, value: T) {
+        let was_not_present = self.set.insert(value.clone());
+        if was_not_present {
+            self.vec.push(value)
+        }
+    }
+
+    fn remove(&mut self, index: usize) {
+        let value = self.vec.swap_remove(index);
+        let was_present = self.set.remove(&value);
+        assert!(was_present);
+    }
+
+    fn consume<U>(&mut self, mut other: Self, ignore: &HashMap<T, Option<U>>)
+    where
+        U: Eq,
+    {
+        let to_add: Vec<T> = other
+            .set
+            .drain()
+            .filter(|location| ignore.get(location) == Some(&None) && !self.set.contains(location))
+            .collect();
+        self.vec.extend(to_add.iter().cloned());
+        self.set.extend(to_add.into_iter());
+    }
+
+    fn iter(&self) -> std::slice::Iter<T> {
+        self.vec.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.vec.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.vec.len()
+    }
+}
+
+
+
 fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i64 {
     let dx = loc.0 as i64 - oth_loc.0 as i64;
     let dy = loc.1 as i64 - oth_loc.1 as i64;
@@ -47,7 +108,7 @@ fn maybe_print_debug_info(
     pixel_index: usize,
     size: u32,
     time: &mut Instant,
-    frontiers: &[HashSet<Location>],
+    frontiers: &[Frontier],
 ) {
     if let Some(debug_frequency) = debug_frequency {
         if pixel_index > 0 && pixel_index % debug_frequency == 0 {
@@ -101,18 +162,16 @@ fn collapse_into(
     source_region: RegionId,
     target_region: RegionId,
     debug: bool,
-    frontiers: &mut [HashSet<Location>],
+    frontiers: &mut [Frontier],
     locations_to_regions: &mut HashMap<Location, Option<RegionId>>,
     assigned_colors: &mut HashMap<Color, (Location, RegionId)>,
 ) {
     if debug {
         println!("Collapsing {} into {}", source_region, target_region);
     }
-    let mut temp_frontier = HashSet::new();
+    let mut temp_frontier = Frontier::new();
     swap(&mut temp_frontier, &mut frontiers[source_region]);
-    frontiers[target_region].extend(temp_frontier.drain().filter(|location| {
-        locations_to_regions.get(location) == Some(&None)
-    }));
+    frontiers[target_region].consume(temp_frontier, &locations_to_regions);
     for region in locations_to_regions.values_mut() {
         if *region == Some(source_region) {
             *region = Some(target_region);
@@ -154,22 +213,21 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             .map(|location| (location, None))
             .collect();
     assert_eq!(colors.len(), locations_to_regions.len());
-    let mut frontiers: Vec<HashSet<Location>> = (0..random_locs).map(|_| HashSet::new()).collect();
+    let mut frontiers: Vec<Frontier> = (0..random_locs).map(|_| Frontier::new()).collect();
     let mut assigned_colors: HashMap<Color, (Location, RegionId)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
         maybe_print_debug_info(debug_frequency, i, size, &mut time, &frontiers);
-        let (location, frontier_index) = if i >= random_locs as usize {
+        let (location, frontier_index, index_in_frontier) = if i >= random_locs as usize {
             let &(target_cell, frontier_index) =
                 find_target_cell_and_frontier(color, &color_offsets, &assigned_colors);
-            (
-                *frontiers[frontier_index]
-                    .iter()
-                    .min_by_key(|loc| squared_location_distance(&target_cell, loc))
-                    .expect("There's at least one left"),
-                frontier_index,
-            )
+            let (index_in_frontier, &location) = frontiers[frontier_index]
+                .iter()
+                .enumerate()
+                .min_by_key(|&(_, loc)| squared_location_distance(&target_cell, loc))
+                .expect("There's at least one left");
+            (location, frontier_index, Some(index_in_frontier))
         } else {
             let location = loop {
                 let &(&location, region) = thread_rng()
@@ -179,11 +237,13 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
                     break location;
                 }
             };
-            (location, i)
+            (location, i, None)
         };
         let previous_region = locations_to_regions.insert(location, Some(frontier_index));
         assert_eq!(previous_region, Some(None));
-        frontiers[frontier_index].remove(&location);
+        if let Some(index) = index_in_frontier {
+            frontiers[frontier_index].remove(index);
+        }
         for neighbor in &[
             (location.0 + 1, location.1),
             (location.0, location.1 + 1),
