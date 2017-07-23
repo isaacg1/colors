@@ -32,7 +32,7 @@ use std::mem::swap;
 
 type Color = (u8, u8, u8);
 
-type Location = (u32, u32);
+type Location = (u16, u16);
 
 type RegionId = usize;
 
@@ -70,15 +70,20 @@ where
     where
         U: Eq,
     {
-        let to_add: Vec<T> = other
-            .vec
-            .into_iter()
-            .filter(|location| {
-                ignore.get(location) == Some(&None) && !self.set.contains(location)
-            })
-            .collect();
-        self.vec.extend(to_add.iter().cloned());
-        self.set.extend(to_add.into_iter());
+        {
+            let set = &self.set;
+            let to_add = other
+                .vec
+                .iter()
+                .filter(|location| {
+                    ignore.get(location) == Some(&None) && !set.contains(location)
+                })
+                .cloned();
+            self.vec.extend(to_add);
+        }
+        self.set.extend(other.vec.into_iter().filter(|location| {
+            ignore.get(location) == Some(&None)
+        }));
     }
     fn iter(&self) -> std::slice::Iter<T> {
         self.vec.iter()
@@ -93,9 +98,9 @@ where
 
 
 
-fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i64 {
-    let dx = loc.0 as i64 - oth_loc.0 as i64;
-    let dy = loc.1 as i64 - oth_loc.1 as i64;
+fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i32 {
+    let dx = loc.0 as i32 - oth_loc.0 as i32;
+    let dy = loc.1 as i32 - oth_loc.1 as i32;
 
     dx * dx + dy * dy
 }
@@ -135,15 +140,15 @@ fn maybe_print_debug_info(
 
 fn find_target_cell_and_frontier<'a>(
     color: Color,
-    color_offsets: &[(i64, i64, i64)],
+    color_offsets: &[(i16, i16, i16)],
     assigned_colors: &'a HashMap<Color, (Location, RegionId)>,
 ) -> &'a (Location, RegionId) {
     color_offsets
         .iter()
         .filter_map(|offset| {
-            let new0 = color.0 as i64 + offset.0;
-            let new1 = color.1 as i64 + offset.1;
-            let new2 = color.2 as i64 + offset.2;
+            let new0 = color.0 as i16 + offset.0;
+            let new1 = color.1 as i16 + offset.1;
+            let new2 = color.2 as i16 + offset.2;
             if 0 <= new0 && new0 < 256 && 0 <= new1 && new1 < 256 && 0 <= new2 && new2 < 256 {
                 let color = (new0 as u8, new1 as u8, new2 as u8);
                 assigned_colors.get(&color)
@@ -197,16 +202,18 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
         colors
     };
     let color_offsets = {
-        let mut color_offsets: Vec<(i64, i64, i64)> = iproduct!(
-            -(color_range as i64)..color_range as i64,
-            -(color_range as i64)..color_range as i64,
-            -(color_range as i64)..color_range as i64
+        let mut color_offsets: Vec<(i16, i16, i16)> = iproduct!(
+            -(color_range as i16)..color_range as i16,
+            -(color_range as i16)..color_range as i16,
+            -(color_range as i16)..color_range as i16
         ).collect();
-        color_offsets.sort_by_key(|offset| offset.0.pow(2) + offset.1.pow(2) + offset.2.pow(2));
+        color_offsets.sort_by_key(|offset| {
+            (offset.0 as i32).pow(2) + (offset.1 as i32).pow(2) + (offset.2 as i32).pow(2)
+        });
         color_offsets
     };
     let mut locations_to_regions: HashMap<Location, Option<RegionId>> =
-        iproduct!(0..side_length, 0..side_length)
+        iproduct!(0..side_length as u16, 0..side_length as u16)
             .map(|location| (location, None))
             .collect();
     assert_eq!(colors.len(), locations_to_regions.len());
@@ -273,7 +280,7 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
                 (color.2 as f64 * color_multiplier) as u8,
             ],
         );
-        img.put_pixel(location.0, location.1, pixel);
+        img.put_pixel(location.0 as u32, location.1 as u32, pixel);
     }
     image::ImageRgb8(img)
 }
