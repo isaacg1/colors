@@ -201,15 +201,26 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
         thread_rng().shuffle(&mut colors);
         colors
     };
-    let color_offsets = {
-        let mut color_offsets: Vec<(i16, i16, i16)> = iproduct!(
-            -(color_range as i16)..color_range as i16,
-            -(color_range as i16)..color_range as i16,
-            -(color_range as i16)..color_range as i16
+    let color_offsets: Vec<(i16, i16, i16)> = {
+        let mut positive_color_offsets: Vec<(i16, i16, i16)> = iproduct!(
+            0..color_range as i16,
+            0..color_range as i16,
+            0..color_range as i16
         ).collect();
-        color_offsets.sort_by_key(|offset| {
+        positive_color_offsets.sort_by_key(|offset| {
             (offset.0 as i32).pow(2) + (offset.1 as i32).pow(2) + (offset.2 as i32).pow(2)
         });
+        let mut color_offsets = Vec::new();
+        for offset in positive_color_offsets {
+            color_offsets.push((offset.0, offset.1, offset.2));
+            color_offsets.push((-offset.0, offset.1, offset.2));
+            color_offsets.push((offset.0, -offset.1, offset.2));
+            color_offsets.push((offset.0, offset.1, -offset.2));
+            color_offsets.push((-offset.0, -offset.1, offset.2));
+            color_offsets.push((-offset.0, offset.1, -offset.2));
+            color_offsets.push((offset.0, -offset.1, -offset.2));
+            color_offsets.push((-offset.0, -offset.1, -offset.2));
+        }
         color_offsets
     };
     let mut locations_to_regions: HashMap<Location, Option<RegionId>> =
