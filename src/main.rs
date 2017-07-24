@@ -24,7 +24,7 @@ use std::path::Path;
 use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
 
-use std::u32;
+use std::{u8, u32};
 
 use std::time::Instant;
 
@@ -149,7 +149,9 @@ fn find_target_cell_and_frontier<'a>(
             let new0 = color.0 as i16 + offset.0;
             let new1 = color.1 as i16 + offset.1;
             let new2 = color.2 as i16 + offset.2;
-            if 0 <= new0 && new0 < 256 && 0 <= new1 && new1 < 256 && 0 <= new2 && new2 < 256 {
+            if 0 <= new0 && new0 <= u8::MAX as i16 && 0 <= new1 && new1 <= u8::MAX as i16 &&
+                0 <= new2 && new2 <= u8::MAX as i16
+            {
                 let color = (new0 as u8, new1 as u8, new2 as u8);
                 assigned_colors.get(&color)
             } else {
