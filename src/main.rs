@@ -191,7 +191,7 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
     assert!(size <= 16);
     let color_range = size * size;
     let color_range_vec: Vec<u8> = (0..color_range).map(|color| color as u8).collect();
-    let color_multiplier = 256_f64 / color_range as f64;
+    let color_multiplier = u8::MAX as f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
     let colors = {
