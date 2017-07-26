@@ -117,12 +117,12 @@ fn maybe_print_debug_info(
             let time_per_pixel = (time.elapsed() / debug_frequency as u32).subsec_nanos() as f64 /
                 10_f64.powi(9);
             println!(
-                "Completed {} out of {} pixels,  {:.6} milliseconds per pixel\n\
+                "Completed {} out of {} pixels,  {:.3} microseconds per pixel\n\
                      Approximately {:.1} sec to go.\n\
                      {} frontier(s) with {} pixels exist.",
                 pixel_index,
                 size.pow(6),
-                time_per_pixel * 1000_f64,
+                time_per_pixel * 1000_000_f64,
                 (size.pow(6) as f64 - pixel_index as f64) * time_per_pixel,
                 frontiers
                     .iter()
