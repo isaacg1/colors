@@ -190,11 +190,11 @@ fn collapse_into(
 fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
     assert!(size <= 16);
     let color_range = size * size;
-    let color_range_vec: Vec<u8> = (0..color_range).map(|color| color as u8).collect();
     let color_multiplier = u8::MAX as f64 / color_range as f64;
     let side_length = size * size * size;
     let random_locs = size * 2;
     let colors = {
+        let color_range_vec: Vec<u8> = (0..color_range).map(|color| color as u8).collect();
         let mut colors: Vec<Color> = iproduct!(
             color_range_vec.iter().cloned(),
             color_range_vec.iter().cloned(),
@@ -214,14 +214,18 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
         });
         let mut color_offsets = Vec::new();
         for offset in positive_color_offsets {
-            color_offsets.push((offset.0, offset.1, offset.2));
-            color_offsets.push((-offset.0, offset.1, offset.2));
-            color_offsets.push((offset.0, -offset.1, offset.2));
-            color_offsets.push((offset.0, offset.1, -offset.2));
-            color_offsets.push((-offset.0, -offset.1, offset.2));
-            color_offsets.push((-offset.0, offset.1, -offset.2));
-            color_offsets.push((offset.0, -offset.1, -offset.2));
-            color_offsets.push((-offset.0, -offset.1, -offset.2));
+            color_offsets.extend(
+                &[
+                    (offset.0, offset.1, offset.2),
+                    (-offset.0, offset.1, offset.2),
+                    (offset.0, -offset.1, offset.2),
+                    (offset.0, offset.1, -offset.2),
+                    (-offset.0, -offset.1, offset.2),
+                    (-offset.0, offset.1, -offset.2),
+                    (offset.0, -offset.1, -offset.2),
+                    (-offset.0, -offset.1, -offset.2),
+                ],
+            )
         }
         color_offsets
     };
