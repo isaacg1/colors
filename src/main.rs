@@ -64,6 +64,25 @@ where
         assert!(was_present);
         value
     }
+    fn consume<U>(&mut self, other: Self, ignore: &HashMap<T, Option<U>>)
+    where
+        U: Eq,
+    {
+        {
+            let set = &self.set;
+            let to_add = other
+                .vec
+                .iter()
+                .filter(|location| {
+                    ignore.get(location) == Some(&None) && !set.contains(location)
+                })
+                .cloned();
+            self.vec.extend(to_add);
+        }
+        self.set.extend(other.vec.into_iter().filter(|location| {
+            ignore.get(location) == Some(&None)
+        }));
+    }
     fn iter(&self) -> std::slice::Iter<T> {
         self.vec.iter()
     }
@@ -94,7 +113,6 @@ impl Frontier {
     fn new_like(other: &Self) -> Self {
         Frontier::new(other.square_size, other.pixel_size)
     }
-    // This lookup could error if square_size is more than 16.
     fn get_square_mut(&mut self, loc: &Location) -> &mut VecSet<Location> {
         &mut self.squares[loc[0] as usize * self.square_size / self.pixel_size]
             [loc[1] as usize * self.square_size / self.pixel_size]
@@ -106,35 +124,63 @@ impl Frontier {
     where
         U: Eq,
     {
-        for elem in other.squares.iter().flat_map(|vec| vec.iter()).flat_map(
-            |vecset| {
-                vecset.iter()
-            },
-        )
+        for (our_square, oth_square) in
+            self.squares.iter_mut().flat_map(|vec| vec.iter_mut()).zip(
+                other.squares.into_iter().flat_map(|vec| vec.into_iter()),
+            )
         {
-            if ignore.get(elem) == Some(&None) {
-                self.insert(*elem)
-            }
+            our_square.consume(oth_square, ignore)
         }
     }
     fn extract_nearest_neighbor(&mut self, target: &Location) -> Location {
-        let mut best_square_and_index = None;
-        let mut best_distance = i32::MAX;
-        for (indices, square) in self.squares.iter().enumerate().flat_map(|(ri, vec)| {
-            vec.iter().enumerate().map(move |(ci, vecset)| ((ri, ci), vecset))
-        })
-        {
-        if let Some((index_in_frontier, loc)) = square.iter()
-            .enumerate()
-            .min_by_key(|&(_, loc)| squared_location_distance(&target, loc)) {
-                let distance = squared_location_distance(&target, loc);
-                if distance < best_distance {
-                    best_distance = distance;
-                    best_square_and_index = Some((indices, index_in_frontier));
+        let loc_r = target[0] as usize * self.square_size / self.pixel_size;
+        let loc_c = target[1] as usize * self.square_size / self.pixel_size;
+        let pixel_size = self.pixel_size;
+        let square_size = self.square_size;
+        let closest_pixel_in_square = |target_i, square_i, base| if target_i == square_i {
+            base
+        } else if target_i < square_i {
+            (square_i * pixel_size / square_size) as u16
+        } else {
+            ((square_i + 1) * pixel_size / square_size - 1) as u16
+        };
+        let (square, index) = {
+            let mut best_square_and_index = None;
+            let mut best_distance = i32::MAX;
+            let mut data: Vec<_> = self.squares
+                .iter()
+                .enumerate()
+                .flat_map(|(ri, vec)| {
+                    vec.iter().enumerate().map(
+                        move |(ci, vecset)| ((ri, ci), vecset),
+                    )
+                })
+                .map(|((ri, ci), square)| {
+                    let closest_r = closest_pixel_in_square(loc_r, ri, target[0]);
+                    let closest_c = closest_pixel_in_square(loc_c, ci, target[1]);
+                    ((ri, ci), square, [closest_r, closest_c])
+                })
+                .collect();
+            data.sort_by_key(|&(_, _, closest)| {
+                squared_location_distance(&target, &closest)
+            });
+            for (indices, square, closest) in data {
+                if squared_location_distance(&target, &closest) < best_distance {
+                    if let Some((index_in_frontier, loc)) =
+                        square.iter().enumerate().min_by_key(|&(_, loc)| {
+                            squared_location_distance(&target, loc)
+                        })
+                    {
+                        let distance = squared_location_distance(&target, loc);
+                        if distance < best_distance {
+                            best_distance = distance;
+                            best_square_and_index = Some((indices, index_in_frontier));
+                        }
+                    }
                 }
             }
-        }
-        let (square, index) = best_square_and_index.expect("There's at least one left");
+            best_square_and_index.expect("There's at least one left")
+        };
         self.squares[square.0][square.1].remove(index)
     }
     fn is_empty(&self) -> bool {
@@ -242,7 +288,7 @@ fn collapse_into(
         }
     }
 }
-fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
+fn make_image(size: u32, frontier_groups: usize, debug_frequency: Option<usize>) -> DynamicImage {
     assert!(size <= 16);
     let color_range = size * size;
     let color_multiplier = u8::MAX as f64 / color_range as f64;
@@ -292,7 +338,7 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             .collect();
     assert_eq!(colors.len(), locations_to_regions.len());
     let mut frontiers: Vec<Frontier> = (0..random_locs)
-        .map(|_| Frontier::new(2, side_length as usize))
+        .map(|_| Frontier::new(frontier_groups, side_length as usize))
         .collect();
     let mut assigned_colors: HashMap<Color, (Location, RegionId)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
@@ -376,12 +422,24 @@ fn main() {
                     "Sets the verbose output frequency. 20000 is a typical value.",
                 ),
         )
+        .arg(
+            Arg::with_name("frontier_groups")
+                .short("f")
+                .long("frontier")
+                .takes_value(true)
+                .help("Sets the root of the number of buckets a frontier occupies"),
+        )
         .get_matches();
     let size: u32 = matches
         .value_of("size")
         .expect("Size must be provided")
         .parse()
         .expect("Size must be an integer in range");
+    let frontier_groups = matches.value_of("frontier_groups").map_or(1, |frontier| {
+        frontier.parse().expect(
+            "Frontier groups must be an integer in range",
+        )
+    });
     let debug_frequency: Option<usize> = matches.value_of("verbosity").map(|verbosity| {
         verbosity.parse().expect(
             "Verbosity must be an integer in range",
@@ -389,7 +447,7 @@ fn main() {
     });
     assert!(size <= 16, "Size must be no more than 16");
     let filename = format!("pic{}-{}.png", size, random::<u32>());
-    let image = make_image(size, debug_frequency);
+    let image = make_image(size, frontier_groups, debug_frequency);
     let fout =
         &mut File::create(&Path::new(&filename)).expect("Create the file to save in should work");
     image.save(fout, image::PNG).expect(
