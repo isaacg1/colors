@@ -24,7 +24,7 @@ use std::path::Path;
 use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
 
-use std::{u8, u32};
+use std::{u8, i32, u32};
 
 use std::time::Instant;
 
@@ -35,8 +35,6 @@ type Color = [u8; 3];
 type Location = [u16; 2];
 
 type RegionId = usize;
-
-type Frontier = VecSet<Location>;
 
 // Synchronized to always have the same data.
 struct VecSet<T> {
@@ -60,30 +58,11 @@ where
             self.vec.push(value)
         }
     }
-    fn remove(&mut self, index: usize) {
+    fn remove(&mut self, index: usize) -> T {
         let value = self.vec.swap_remove(index);
         let was_present = self.set.remove(&value);
         assert!(was_present);
-    }
-    // Takes ownership of other and drops it on purpose.
-    fn consume<U>(&mut self, other: Self, ignore: &HashMap<T, Option<U>>)
-    where
-        U: Eq,
-    {
-        {
-            let set = &self.set;
-            let to_add = other
-                .vec
-                .iter()
-                .filter(|location| {
-                    ignore.get(location) == Some(&None) && !set.contains(location)
-                })
-                .cloned();
-            self.vec.extend(to_add);
-        }
-        self.set.extend(other.vec.into_iter().filter(|location| {
-            ignore.get(location) == Some(&None)
-        }));
+        value
     }
     fn iter(&self) -> std::slice::Iter<T> {
         self.vec.iter()
@@ -96,7 +75,83 @@ where
     }
 }
 
+struct Frontier {
+    squares: Vec<Vec<VecSet<Location>>>,
+    square_size: usize,
+    pixel_size: usize,
+}
 
+impl Frontier {
+    fn new(square_size: usize, pixel_size: usize) -> Self {
+        Frontier {
+            squares: (0..square_size)
+                .map(|_| (0..square_size).map(|_| VecSet::new()).collect())
+                .collect(),
+            square_size: square_size as usize,
+            pixel_size: pixel_size as usize,
+        }
+    }
+    fn new_like(other: &Self) -> Self {
+        Frontier::new(other.square_size, other.pixel_size)
+    }
+    // This lookup could error if square_size is more than 16.
+    fn get_square_mut(&mut self, loc: &Location) -> &mut VecSet<Location> {
+        &mut self.squares[loc[0] as usize * self.square_size / self.pixel_size]
+            [loc[1] as usize * self.square_size / self.pixel_size]
+    }
+    fn insert(&mut self, loc: Location) {
+        self.get_square_mut(&loc).insert(loc)
+    }
+    fn consume<U>(&mut self, other: Self, ignore: &HashMap<Location, Option<U>>)
+    where
+        U: Eq,
+    {
+        for elem in other.squares.iter().flat_map(|vec| vec.iter()).flat_map(
+            |vecset| {
+                vecset.iter()
+            },
+        )
+        {
+            if ignore.get(elem) == Some(&None) {
+                self.insert(*elem)
+            }
+        }
+    }
+    fn extract_nearest_neighbor(&mut self, target: &Location) -> Location {
+        let mut best_square_and_index = None;
+        let mut best_distance = i32::MAX;
+        for (indices, square) in self.squares.iter().enumerate().flat_map(|(ri, vec)| {
+            vec.iter().enumerate().map(move |(ci, vecset)| ((ri, ci), vecset))
+        })
+        {
+        if let Some((index_in_frontier, loc)) = square.iter()
+            .enumerate()
+            .min_by_key(|&(_, loc)| squared_location_distance(&target, loc)) {
+                let distance = squared_location_distance(&target, loc);
+                if distance < best_distance {
+                    best_distance = distance;
+                    best_square_and_index = Some((indices, index_in_frontier));
+                }
+            }
+        }
+        let (square, index) = best_square_and_index.expect("There's at least one left");
+        self.squares[square.0][square.1].remove(index)
+    }
+    fn is_empty(&self) -> bool {
+        self.squares.iter().flat_map(|vec| vec.iter()).all(
+            |vecset| {
+                vecset.is_empty()
+            },
+        )
+    }
+    fn len(&self) -> usize {
+        self.squares
+            .iter()
+            .flat_map(|vec| vec.iter())
+            .map(|vecset| vecset.len())
+            .sum()
+    }
+}
 
 fn squared_location_distance(loc: &Location, oth_loc: &Location) -> i32 {
     let dx = loc[0] as i32 - oth_loc[0] as i32;
@@ -173,7 +228,7 @@ fn collapse_into(
     if debug {
         println!("Collapsing {} into {}", source_region, target_region);
     }
-    let mut temp_frontier = Frontier::new();
+    let mut temp_frontier = Frontier::new_like(&frontiers[source_region]);
     swap(&mut temp_frontier, &mut frontiers[source_region]);
     frontiers[target_region].consume(temp_frontier, &locations_to_regions);
     for region in locations_to_regions.values_mut() {
@@ -199,7 +254,8 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             color_range_vec.iter().cloned(),
             color_range_vec.iter().cloned(),
             color_range_vec.iter().cloned()
-        ).map(|(a, b, c)|[a, b, c]).collect();
+        ).map(|(a, b, c)| [a, b, c])
+            .collect();
         thread_rng().shuffle(&mut colors);
         colors
     };
@@ -208,7 +264,8 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             0..color_range as i16,
             0..color_range as i16,
             0..color_range as i16
-        ).map(|(a, b, c)|[a, b, c]).collect();
+        ).map(|(a, b, c)| [a, b, c])
+            .collect();
         positive_color_offsets.sort_by_key(|offset| {
             (offset[0] as i32).pow(2) + (offset[1] as i32).pow(2) + (offset[2] as i32).pow(2)
         });
@@ -234,21 +291,19 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
             .map(|location| ([location.0, location.1], None))
             .collect();
     assert_eq!(colors.len(), locations_to_regions.len());
-    let mut frontiers: Vec<Frontier> = (0..random_locs).map(|_| Frontier::new()).collect();
+    let mut frontiers: Vec<Frontier> = (0..random_locs)
+        .map(|_| Frontier::new(2, side_length as usize))
+        .collect();
     let mut assigned_colors: HashMap<Color, (Location, RegionId)> = HashMap::new();
     let mut img = ImageBuffer::new(side_length, side_length);
     let mut time = Instant::now();
     for (i, color) in colors.into_iter().enumerate() {
         maybe_print_debug_info(debug_frequency, i, size, &mut time, &frontiers);
-        let (location, frontier_index, index_in_frontier) = if i >= random_locs as usize {
+        let (location, frontier_index) = if i >= random_locs as usize {
             let &(target_cell, frontier_index) =
                 find_target_cell_and_frontier(color, &color_offsets, &assigned_colors);
-            let (index_in_frontier, &location) = frontiers[frontier_index]
-                .iter()
-                .enumerate()
-                .min_by_key(|&(_, loc)| squared_location_distance(&target_cell, loc))
-                .expect("There's at least one left");
-            (location, frontier_index, Some(index_in_frontier))
+            let location = frontiers[frontier_index].extract_nearest_neighbor(&target_cell);
+            (location, frontier_index)
         } else {
             let location = loop {
                 let &(&location, region) = thread_rng()
@@ -258,13 +313,10 @@ fn make_image(size: u32, debug_frequency: Option<usize>) -> DynamicImage {
                     break location;
                 }
             };
-            (location, i, None)
+            (location, i)
         };
         let previous_region = locations_to_regions.insert(location, Some(frontier_index));
         assert_eq!(previous_region, Some(None));
-        if let Some(index) = index_in_frontier {
-            frontiers[frontier_index].remove(index);
-        }
         for neighbor in &[
             [location[0] + 1, location[1]],
             [location[0], location[1] + 1],
