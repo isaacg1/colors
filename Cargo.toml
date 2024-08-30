@@ -4,7 +4,7 @@ version = "0.5.0"
 authors = ["Isaac Grosof <isaacbg227@gmail.com>"]
 
 [dependencies]
-image = "*"
-itertools = "^0.6.0"
-rand = "*"
-clap = "*"
+image = "=0.15.0"
+itertools = "=0.6.0"
+rand = "=0.3.16"
+clap = "=2.26.0"

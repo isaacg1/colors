@@ -1,6 +1,4 @@
 #![feature(test)]
-#![warn(clippy_pedantic)]
-#![allow(print_stdout)]
 #![warn(warnings)]
 #![allow(unknown_lints, missing_docs_in_private_items, cast_sign_loss,
          cast_possible_truncation, cast_precision_loss)]
